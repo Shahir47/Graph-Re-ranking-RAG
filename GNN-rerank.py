@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 from torch import nn, optim
 from torch_geometric.data import Data
 from torch_geometric.loader import NeighborLoader
@@ -48,7 +49,9 @@ pid2idx = {pid: idx for idx, pid in enumerate(passage_ids)}
 
 print("----------------------------- Loading precomputed corpus graphs -----------------------------")
 graph = NpTopKCorpusGraph('./corpusgraph_bm25_k8')
-edge_index = torch.tensor(graph.edges_data.T, dtype=torch.long) 
+# edge_index = torch.tensor(graph.edges_data.T, dtype=torch.long)
+edges_int64 = graph.edges_data.astype(np.int64) 
+edge_index = torch.from_numpy(edges_int64.T).long()
 
 #PyG Data object
 x = embeddings
