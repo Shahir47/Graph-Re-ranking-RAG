@@ -50,17 +50,27 @@ pid2idx = {pid: idx for idx, pid in enumerate(passage_ids)}
 print("----------------------------- Loading precomputed corpus graphs -----------------------------")
 graph = NpTopKCorpusGraph('./corpusgraph_bm25_k8')
 # edge_index = torch.tensor(graph.edges_data.T, dtype=torch.long)
+# int solution: 
+#----------------
 edges_int64 = graph.edges_data.astype(np.int64) 
-edge_index = torch.from_numpy(edges_int64.T).long()
+# edge_index = torch.from_numpy(edges_int64.T).long()
+# Neighbor solution: 
+#----------------
+adj = torch.from_numpy(edges_int64)     
+row = torch.arange(adj.size(0)).unsqueeze(1).repeat(1, adj.size(1)).view(-1)
+col = adj.view(-1)
+edge_index = torch.stack([row, col], dim=0)    
 
 #PyG Data object
 x = embeddings
 
 labels = torch.zeros(x.size(0), dtype=torch.float)
-for qrel in tqdm(ds.qrels_iter(), desc='Building labels...'):
-    pid = qrel.passage_id
+for qrel in tqdm(dataset_.qrels_iter(), desc='Building labels...'):
+    pid = qrel.doc_id
     if pid in pid2idx:
         labels[pid2idx[pid]] = 1.0
+
+labels = labels.to(cuda_device)
 
 data = Data(x=x, edge_index=edge_index)
 
@@ -95,13 +105,16 @@ for epoch in range(EPOCHS):
     
     for batch in loader_iter:
         batch = batch.to(cuda_device)
+        seed_count = batch.batch_size
+        seed_positions = torch.arange(seed_count, device=cuda_device)
         optimizer.zero_grad()
-        out = model(batch.x, batch.edge_index, batch.batch)
-        batch_labels = labels[batch.batch].to(cuda_device)
+        out = model(batch.x, batch.edge_index, seed_positions)
+        seed_global_ids = batch.n_id[:seed_count] 
+        batch_labels = labels[seed_global_ids].to(cuda_device)
         loss = criterion(out, batch_labels)
         loss.backward()
         optimizer.step()
-        total_loss += loss.item() * batch.batch.size(0)
+        total_loss += loss.item() * seed_count
         loader_iter.set_postfix(loss=loss.item())
 
     avg_loss = total_loss / data.num_nodes
